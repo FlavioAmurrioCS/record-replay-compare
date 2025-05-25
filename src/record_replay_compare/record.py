@@ -8,7 +8,7 @@ from typing import NamedTuple
 
 import httpx
 
-from record_replay_compare.wsgitools import start_http_server
+from record_replay_compare.wsgitools import serve_forever
 
 if TYPE_CHECKING:
     from typing import Callable
@@ -164,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
 
     http_request_handler: RequestHandler = http_request_adapter(final)
 
-    start_http_server(http_request_handler, host="localhost", port=args.port)
+    serve_forever(http_request_handler, host="localhost", port=args.port)
     return 0
 
 
