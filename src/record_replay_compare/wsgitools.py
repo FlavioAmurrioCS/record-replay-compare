@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 from typing import overload
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
+from wsgiref.util import application_uri
+from wsgiref.util import request_uri
 
 logger = logging.getLogger(__name__)
 
@@ -18,18 +20,18 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from collections.abc import Iterator
-    from io import BufferedReader
     from typing import Callable
     from typing import Final
     from typing import Literal
     from typing import TypedDict
     from typing import TypeVar
 
+    from _typeshed.wsgi import ErrorStream
+    from _typeshed.wsgi import InputStream
     from _typeshed.wsgi import StartResponse
     from _typeshed.wsgi import WSGIApplication
     from _typeshed.wsgi import WSGIEnvironment
     from typing_extensions import NotRequired
-    from typing_extensions import Protocol
     from typing_extensions import Self
     from typing_extensions import TypeAlias
 
@@ -53,24 +55,10 @@ if TYPE_CHECKING:
         headers: Mapping[str, str]
         body: Iterable[bytes]
 
-    class InputStream(Protocol):
-        def read(self, size: int = ..., /) -> bytes: ...
-
-        # def readline(self, size: int = ..., /) -> bytes: ...
-        # def readlines(self, hint: int = ..., /) -> list[bytes]: ...
-        # def __iter__(self) -> Iterator[bytes]: ...
-
-    class ErrorStream(Protocol):
-        ...
-        # def flush(self) -> object: ...
-        # def write(self, s: str, /) -> object: ...
-        # def writelines(self, seq: list[str], /) -> object: ...
-
     class WSGIVars(TypedDict):
         version: tuple[int, int]
         url_scheme: str
-        # input: InputStream
-        input: BufferedReader
+        input: InputStream
         errors: ErrorStream
         multithread: bool
         multiprocess: bool
@@ -107,12 +95,14 @@ class HttpHeaders(Mapping[str, str]):
     def __len__(self) -> int:
         return len(self._data)
 
+
 @dataclass(frozen=True)
 class ParsedWsgi:
     headers: HttpHeaders
     wsgi_vars: WSGIVars
     cgi_vars: CGIVars
     other: Mapping[str, str]
+    environ: WSGIEnvironment
 
     @classmethod
     def from_environ(cls, environ: WSGIEnvironment) -> Self:
@@ -147,7 +137,11 @@ class ParsedWsgi:
                 other[key] = value
         headers.pop("HOST", None)
         return cls(
-            headers=HttpHeaders(headers), wsgi_vars=wsgi_vars, cgi_vars=cgi_vars, other=other
+            headers=HttpHeaders(headers),
+            wsgi_vars=wsgi_vars,
+            cgi_vars=cgi_vars,
+            other=other,
+            environ=environ,
         )
 
     @cached_property
@@ -155,7 +149,7 @@ class ParsedWsgi:
         return self.cgi_vars["REQUEST_METHOD"]
 
     @cached_property
-    def url(self) -> str:
+    def path(self) -> str:
         return self.cgi_vars["PATH_INFO"]
 
     @cached_property
@@ -164,14 +158,20 @@ class ParsedWsgi:
 
     @cached_property
     def content(self) -> bytes:
-        return self.wsgi_vars["input"].read(
-            int(self.cgi_vars.get("CONTENT_LENGTH", "0") or "0")
-        )
+        return self.wsgi_vars["input"].read(int(self.cgi_vars.get("CONTENT_LENGTH", "0") or "0"))
+
+    @cached_property
+    def full_url(self) -> str:
+        return request_uri(self.environ)
+
+    @cached_property
+    def base_url(self) -> str:
+        return application_uri(self.environ)
 
     def to_http_request(self) -> HTTPRecordRequest:
         return {
             "method": self.method,
-            "url": self.url,
+            "url": self.path,
             "params": self.params,
             "headers": dict(self.headers.items()),
             "json": json.loads(self.content) if self.content else None,
@@ -191,7 +191,7 @@ def _remove_hop_by_hop_headers(headers: Mapping[str, str]) -> dict[str, str]:
         "transfer-encoding",
         "upgrade",
         "content-encoding",
-        # This is not a hop-by-hop header, but it is a header that should not be sent in the response
+        # This is not a hop-by-hop header, but it is a header that should not be sent
         "content-length",
     }
     return {k: v for k, v in headers.items() if k.lower() not in hoppish_headers}
@@ -228,7 +228,7 @@ def create_simple_wsgi_app(
     return app
 
 
-def start_http_server(
+def serve_forever(
     request_handler: RequestHandler,
     host: str = "127.0.0.1",
     port: int = 3000,
@@ -269,7 +269,7 @@ DEFAULT_RESPONSE: Final[WSGIResponse] = {
 
 
 @overload
-def serve_single_request(
+def handle_request(
     request_handler: RequestHandler,
     host: str = ...,
     port: int = ...,
@@ -279,7 +279,7 @@ def serve_single_request(
 
 
 @overload
-def serve_single_request(
+def handle_request(
     request_handler: Callable[[InputArg], T],
     host: str = ...,
     port: int = ...,
@@ -288,7 +288,7 @@ def serve_single_request(
 ) -> T | None: ...
 
 
-def serve_single_request(
+def handle_request(
     request_handler: Callable[[InputArg], T],
     host: str = "127.0.0.1",
     port: int = 3000,
@@ -355,8 +355,8 @@ if __name__ == "__main__":
             "body": (json.dumps(_event, default=str).encode("utf-8"),),
         }
 
-    e = serve_single_request(example_handler, response_factory=lambda _: DEFAULT_RESPONSE)
-    start_http_server(example_handler)
+    e = handle_request(example_handler, response_factory=lambda _: DEFAULT_RESPONSE)
+    serve_forever(example_handler)
 
     # import uvicorn
     # uvicorn.run(
