@@ -151,13 +151,13 @@ def main(argv: list[str] | None = None) -> int:
         filename=os.path.join(args.output_dir, "base.json"),
         http_client=httpx.Client(base_url=args.base),
     )
-    final: HTTPRequestHandler = base_recorder
+    final: HTTPRequestHandler = base_recorder  # type: ignore[assignment]
     if args.candidate:
         candidate_recorder = Recorder(
             filename=os.path.join(args.output_dir, "candidate.json"),
             http_client=httpx.Client(base_url=args.candidate),
         )
-        final = ParityChecker(base_recorder, candidate_recorder)
+        final = ParityChecker(base_recorder, candidate_recorder)  # type: ignore[assignment]
         logger.info("Using parity checker with base %s and candidate %s", args.base, args.candidate)
     else:
         logger.info("Using base recorder with base %s", args.base)

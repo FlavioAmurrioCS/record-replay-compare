@@ -25,9 +25,9 @@ if TYPE_CHECKING:
     from typing import Literal
     from typing import TypedDict
     from typing import TypeVar
-    from wsgiref.types import ErrorStream
-    from wsgiref.types import InputStream
 
+    from _typeshed.wsgi import ErrorStream
+    from _typeshed.wsgi import InputStream
     from _typeshed.wsgi import StartResponse
     from _typeshed.wsgi import WSGIApplication
     from _typeshed.wsgi import WSGIEnvironment
@@ -191,7 +191,7 @@ def _remove_hop_by_hop_headers(headers: Mapping[str, str]) -> dict[str, str]:
         "transfer-encoding",
         "upgrade",
         "content-encoding",
-        # This is not a hop-by-hop header, but it is a header that should not be sent in the response
+        # This is not a hop-by-hop header, but it is a header that should not be sent
         "content-length",
     }
     return {k: v for k, v in headers.items() if k.lower() not in hoppish_headers}
